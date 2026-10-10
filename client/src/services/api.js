@@ -64,6 +64,7 @@ export const getStockLevelsApi = (params) => api.get('/stock', { params });
 export const getStockAlertsApi = (params) => api.get('/stock/alerts', { params });
 export const updateReorderThresholdApi = (productId, data) => api.put(`/stock/${productId}/threshold`, data);
 export const quickStockInwardApi = (data) => api.post('/stock/inward', data);
+export const resetAllStockToZeroApi = () => api.post('/stock/reset-zero');
 
 // 4.1. Supplier APIs
 export const getSuppliersApi = (params) => api.get('/suppliers', { params });

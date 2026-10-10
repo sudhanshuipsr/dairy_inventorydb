@@ -266,6 +266,39 @@ export const quickStockInward = async (req, res) => {
   }
 };
 
+// @route   POST /api/stock/reset-zero
+// @desc    Reset all product stock levels and batch quantities to 0
+// @access  Private
+export const resetAllStockToZero = async (req, res) => {
+  try {
+    const [stocksUpdated] = await Stock.update(
+      { currentQuantity: 0, lastUpdated: new Date() },
+      { where: {} }
+    );
+    const [batchesUpdated] = await ExpiryBatch.update(
+      { quantity: 0 },
+      { where: {} }
+    );
+
+    await logAudit({
+      req,
+      action: 'UPDATE',
+      entityType: 'Stock',
+      entityId: 0,
+      details: `Admin/User reset all stock to 0 (${stocksUpdated} stocks, ${batchesUpdated} batches set to 0)`
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `All stock successfully reset to zero (${stocksUpdated} stocks, ${batchesUpdated} batches set to 0).`,
+      stocksUpdated,
+      batchesUpdated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @route   GET /api/stock/alerts
 // @desc    Get low-stock items and near-expiry alert metrics using stockAlertUtils
 // @access  Private (Staff & Admin)

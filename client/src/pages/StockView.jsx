@@ -97,6 +97,12 @@ const StockView = () => {
     return () => window.removeEventListener('stock-updated', handleStockUpdated);
   }, [lowStockFilter]);
 
+  useEffect(() => {
+    if (searchParams.get('inward') === 'true' || searchParams.get('action') === 'add') {
+      handleOpenStockEntry();
+    }
+  }, [searchParams]);
+
   const fetchStockLevels = async () => {
     try {
       setLoading(true);

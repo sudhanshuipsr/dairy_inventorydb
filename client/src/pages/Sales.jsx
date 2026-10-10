@@ -99,6 +99,10 @@ const Sales = () => {
         setIsModalOpen(true);
       }
     }
+    const isNewSale = searchParams.get('new') === 'true' || searchParams.get('action') === 'new';
+    if (isNewSale) {
+      setIsModalOpen(true);
+    }
   }, [searchParams, products]);
 
   const fetchProducts = async () => {

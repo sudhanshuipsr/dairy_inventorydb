@@ -22,7 +22,9 @@ import {
   Send,
   ExternalLink,
   Printer,
-  X
+  X,
+  ShoppingCart,
+  Plus
 } from 'lucide-react';
 import { DAIRY_CATEGORIES } from '../utils/categories';
 import { submitFeedbackApi, getProductsApi } from '../services/api';
@@ -128,11 +130,31 @@ const LandingPage = () => {
             <a href="#outlets" className="hover:text-[#1e3a1e] transition-colors">Our Outlets</a>
           </nav>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Quick Stock Add Button */}
+            <Link
+              to="/stock?inward=true"
+              className="inline-flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-3.5 py-2 rounded-full transition-all shadow-xs hover:scale-105 active:scale-95"
+              title="Add Stock (Inward)"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-200 stroke-[3]" />
+              <span>Stock Add</span>
+            </Link>
+
+            {/* Quick Sale Button */}
+            <Link
+              to="/sales?new=true"
+              className="inline-flex items-center gap-1.5 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white font-black text-xs px-3.5 py-2 rounded-full transition-all shadow-xs hover:scale-105 active:scale-95"
+              title="New Sale (Billing)"
+            >
+              <ShoppingCart className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Sale</span>
+            </Link>
+
             {/* ⭐ Rate Us Top Nav Button */}
             <button
               onClick={() => setIsRateModalOpen(true)}
-              className="inline-flex items-center gap-1.5 bg-[#ebf5eb] hover:bg-[#d8e8d8] text-[#1e3a1e] font-bold text-xs px-4 py-2 rounded-full border border-[#a0c396]/40 transition-all cursor-pointer shadow-2xs"
+              className="hidden sm:inline-flex items-center gap-1.5 bg-[#ebf5eb] hover:bg-[#d8e8d8] text-[#1e3a1e] font-bold text-xs px-3.5 py-2 rounded-full border border-[#a0c396]/40 transition-all cursor-pointer shadow-2xs"
             >
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
               <span>Rate Us</span>
@@ -140,9 +162,9 @@ const LandingPage = () => {
 
             <Link
               to="/login"
-              className="inline-flex items-center gap-2 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-[#f8f5f0] font-semibold text-xs px-5 py-2.5 rounded-full shadow-md shadow-[#1e3a1e]/15 transition-all hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-[#1e3a1e] border border-[#a0c396]/60 font-bold text-xs px-4 py-2 rounded-full shadow-2xs transition-all hover:-translate-y-0.5"
             >
-              <span>Login to ERP</span>
+              <span>Login</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -221,31 +243,41 @@ const LandingPage = () => {
               </div>
 
               {/* Call-to-Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3.5 pt-3">
+              <div className="flex flex-wrap items-center gap-3 pt-3">
+                {/* 📦 STOCK ADD BUTTON */}
+                <Link
+                  to="/stock?inward=true"
+                  className="inline-flex items-center gap-2 px-6 py-3.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-sm sm:text-base rounded-full shadow-lg shadow-emerald-700/25 transition-all hover:-translate-y-1 active:translate-y-0"
+                >
+                  <Plus className="w-4 h-4 text-emerald-200 stroke-[3]" />
+                  <span>+ Stock Add</span>
+                </Link>
+
+                {/* 🛒 SALE BUTTON */}
+                <Link
+                  to="/sales?new=true"
+                  className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white font-black text-sm sm:text-base rounded-full shadow-lg shadow-[#1e3a1e]/25 transition-all hover:-translate-y-1 active:translate-y-0"
+                >
+                  <ShoppingCart className="w-4 h-4 text-emerald-300" />
+                  <span>🛒 New Sale</span>
+                </Link>
+
                 <Link
                   to="/products"
-                  className="inline-flex items-center gap-3 px-7 py-3.5 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-[#f8f5f0] font-bold text-sm sm:text-base rounded-full shadow-lg shadow-[#1e3a1e]/20 transition-all hover:-translate-y-1 active:translate-y-0 group"
+                  className="inline-flex items-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-50 text-[#1e3a1e] font-bold text-sm sm:text-base rounded-full border border-[#a0c396]/60 shadow-xs transition-all hover:-translate-y-0.5"
                 >
                   <span>Explore Catalog</span>
-                  <i className="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
 
                 {/* ⭐ Rate Outlet Button in Hero */}
                 <button
                   onClick={() => setIsRateModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#ebf5eb] hover:bg-[#d8e8d8] text-[#1e3a1e] font-bold text-sm sm:text-base rounded-full border-2 border-[#a0c396]/50 shadow-xs transition-all hover:-translate-y-0.5 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-3.5 bg-[#ebf5eb] hover:bg-[#d8e8d8] text-[#1e3a1e] font-bold text-sm sm:text-base rounded-full border-2 border-[#a0c396]/50 shadow-xs transition-all hover:-translate-y-0.5 cursor-pointer"
                 >
                   <QrCode className="w-4 h-4 text-[#1e3a1e]" />
-                  <span>Scan QR & Rate Us</span>
+                  <span>Scan QR & Rate</span>
                 </button>
-
-                <Link
-                  to="/login"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 bg-white/90 hover:bg-white text-[#2d4a2d] font-bold text-sm sm:text-base rounded-full border border-[#9bc09b] shadow-xs transition-all hover:border-[#6a9c6a] hover:-translate-y-0.5"
-                >
-                  <Store className="w-4 h-4 text-[#6a9c6a]" />
-                  <span>Outlet POS</span>
-                </Link>
               </div>
             </motion.div>
 
