@@ -320,3 +320,98 @@ export const getStockAlerts = async (req, res) => {
   }
 };
 
+// @route   PUT /api/stock/:productId/adjust
+// @desc    Admin direct stock correction (fix wrong staff count or audit mismatch)
+// @access  Private/Admin
+export const adjustProductStock = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { newQuantity, adjustmentQuantity, reason } = req.body;
+
+    const stock = await Stock.findOne({
+      where: { productId },
+      include: [{ model: Product, as: 'product' }]
+    });
+
+    if (!stock) {
+      return res.status(404).json({ success: false, message: 'Stock record not found for product' });
+    }
+
+    const oldQty = Number(stock.currentQuantity || 0);
+    let targetQty = oldQty;
+
+    if (newQuantity !== undefined && !isNaN(Number(newQuantity))) {
+      targetQty = Math.max(0, Number(newQuantity));
+    } else if (adjustmentQuantity !== undefined && !isNaN(Number(adjustmentQuantity))) {
+      targetQty = Math.max(0, oldQty + Number(adjustmentQuantity));
+    } else {
+      return res.status(400).json({ success: false, message: 'Valid newQuantity or adjustmentQuantity is required' });
+    }
+
+    stock.currentQuantity = targetQty;
+    stock.lastUpdated = new Date();
+    await stock.save();
+
+    const prodName = stock.product?.name || `Product #${productId}`;
+    const diff = targetQty - oldQty;
+    const diffStr = diff >= 0 ? `+${diff}` : `${diff}`;
+
+    await logAudit({
+      req,
+      action: 'UPDATE',
+      entityType: 'Stock',
+      entityId: stock.id,
+      details: `Admin corrected stock for "${prodName}": ${oldQty} -> ${targetQty} (${diffStr} units). Reason: ${reason || 'Manual Admin stock correction'}`
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Stock for "${prodName}" successfully corrected from ${oldQty} to ${targetQty} units!`,
+      currentQuantity: targetQty,
+      previousQuantity: oldQty,
+      stock
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @route   POST /api/stock/wipe-data
+// @desc    Complete wipe of all transactions (sales, purchases, batches, feedback) & zero stock
+// @access  Private/Admin
+export const wipeAllTransactionData = async (req, res) => {
+  try {
+    const { SaleItem, Sale, PurchaseItem, Purchase, ExpiryBatch, Feedback, ProductionOutput, Production } = await import('../models/index.js');
+    
+    await SaleItem.destroy({ where: {} });
+    await Sale.destroy({ where: {} });
+    await PurchaseItem.destroy({ where: {} });
+    await Purchase.destroy({ where: {} });
+    await ExpiryBatch.destroy({ where: {} });
+    try { await Feedback.destroy({ where: {} }); } catch (e) {}
+    try { await ProductionOutput.destroy({ where: {} }); } catch (e) {}
+    try { await Production.destroy({ where: {} }); } catch (e) {}
+
+    const [stocksUpdated] = await Stock.update(
+      { currentQuantity: 0, lastUpdated: new Date() },
+      { where: {} }
+    );
+
+    await logAudit({
+      req,
+      action: 'DELETE',
+      entityType: 'System',
+      entityId: 0,
+      details: 'Admin performed full data wipe: Deleted all sales, purchases, batches, feedback and reset all stocks to 0.'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Complete reset successful: All sales, purchases, batches, feedback deleted and ${stocksUpdated} stocks set to 0.`,
+      stocksUpdated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

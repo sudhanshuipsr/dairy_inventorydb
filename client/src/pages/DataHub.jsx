@@ -28,7 +28,9 @@ import {
   getExportCsvUrl, 
   bulkImportApi, 
   seedDemoDataApi, 
-  clearDemoDataApi 
+  clearDemoDataApi,
+  wipeAllTransactionDataApi,
+  resetAllStockToZeroApi
 } from '../services/api';
 
 const DataHub = () => {
@@ -50,6 +52,7 @@ const DataHub = () => {
   // Admin action state
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isWipingTransactions, setIsWipingTransactions] = useState(false);
 
   // Direct CSV trigger
   const handleDownload = (type, filename) => {
@@ -204,6 +207,29 @@ const DataHub = () => {
       addToast(err.message || 'Failed to clear data', 'error');
     } finally {
       setIsClearing(false);
+    }
+  };
+
+  const handleWipeAllTransactions = async () => {
+    if (!window.confirm('WARNING: Kya aap sach me sabhi online transactions (Sales, Purchases, Batches, Feedbacks) delete karke saara Stock ZERO (0) karna chahte hain? Offline cache bhi clear ho jayega.')) {
+      return;
+    }
+    try {
+      setIsWipingTransactions(true);
+      const res = await wipeAllTransactionDataApi();
+      // Clear offline stored items
+      localStorage.removeItem('md_offline_feedback');
+      localStorage.removeItem('md_offline_sales');
+      localStorage.removeItem('md_offline_purchases');
+      localStorage.removeItem('md_cart');
+      localStorage.removeItem('dairy_cart');
+      window.dispatchEvent(new Event('stock-updated'));
+      addToast(res.data?.message || 'Saare transactions delete kar diye gaye aur stock 0 kar diya gaya!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast(err.response?.data?.message || 'Failed to wipe transactions', 'error');
+    } finally {
+      setIsWipingTransactions(false);
     }
   };
 
@@ -419,35 +445,62 @@ const DataHub = () => {
 
           {/* Admin Demo Management Actions */}
           {isAdmin && (
-            <div className="bg-white p-6 rounded-3xl border border-[#a0c396]/30 shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <h3 className="font-bold text-sm text-[#1e3a1e] flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#6a9c6a]" />
-                  <span>Demo Products & Catalog Management</span>
-                </h3>
-                <p className="text-xs text-[#3f5a3f] mt-0.5">
-                  Reload 27 authentic Mother Dairy products or reset sample records anytime.
-                </p>
+            <div className="space-y-4">
+              {/* Wipe & Reset Stock Card */}
+              <div className="bg-rose-50/70 p-6 rounded-3xl border border-rose-200 shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-sm text-rose-950 flex items-center gap-2">
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>Sab Zero Karein (Wipe Transactions & Set All Stock to 0)</span>
+                  </h3>
+                  <p className="text-xs text-rose-700 mt-0.5">
+                    Delete all Sales, Purchases, Batches, Customer Feedbacks both online & offline, and reset all product quantities to 0. (Products catalog bacha rahega).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    onClick={handleWipeAllTransactions}
+                    disabled={isWipingTransactions}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className={`w-3.5 h-3.5 ${isWipingTransactions ? 'animate-spin' : ''}`} />
+                    <span>{isWipingTransactions ? 'Wiping Everything...' : 'Wipe All Entries & Set Stock to 0'}</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={handleSeedDemo}
-                  disabled={isSeeding}
-                  className="px-4 py-2 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSeeding ? 'animate-spin' : ''}`} />
-                  <span>{isSeeding ? 'Seeding...' : 'Load 27 Demo Products'}</span>
-                </button>
+              {/* Demo Products & Catalog Management */}
+              <div className="bg-white p-6 rounded-3xl border border-[#a0c396]/30 shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-sm text-[#1e3a1e] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#6a9c6a]" />
+                    <span>Demo Products & Catalog Management</span>
+                  </h3>
+                  <p className="text-xs text-[#3f5a3f] mt-0.5">
+                    Reload 27 authentic Mother Dairy products or reset sample records anytime.
+                  </p>
+                </div>
 
-                <button
-                  onClick={handleClearDemo}
-                  disabled={isClearing}
-                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{isClearing ? 'Clearing...' : 'Clear All Data'}</span>
-                </button>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    onClick={handleSeedDemo}
+                    disabled={isSeeding}
+                    className="px-4 py-2 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSeeding ? 'animate-spin' : ''}`} />
+                    <span>{isSeeding ? 'Seeding...' : 'Load 27 Demo Products'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleClearDemo}
+                    disabled={isClearing}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isClearing ? 'Clearing...' : 'Clear All Data'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

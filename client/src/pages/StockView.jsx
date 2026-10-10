@@ -3,7 +3,9 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { 
   getStockLevelsApi, 
   updateReorderThresholdApi,
-  quickStockInwardApi
+  quickStockInwardApi,
+  adjustProductStockApi,
+  resetAllStockToZeroApi
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -33,7 +35,8 @@ import {
   ArrowRight,
   X,
   ChevronDown,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Trash2
 } from 'lucide-react';
 import { DAIRY_CATEGORIES, getCategoryMeta } from '../utils/categories';
 
@@ -62,6 +65,13 @@ const StockView = () => {
   const [selectedStockForThreshold, setSelectedStockForThreshold] = useState(null);
   const [newThreshold, setNewThreshold] = useState(20);
   const [savingThreshold, setSavingThreshold] = useState(false);
+
+  // Admin Direct Stock Correction State
+  const [selectedStockForAdjust, setSelectedStockForAdjust] = useState(null);
+  const [adjustQuantity, setAdjustQuantity] = useState(0);
+  const [adjustReason, setAdjustReason] = useState('');
+  const [savingAdjust, setSavingAdjust] = useState(false);
+  const [resettingAllStock, setResettingAllStock] = useState(false);
 
   // Stock Entry Modal State
   const [isStockEntryOpen, setIsStockEntryOpen] = useState(false);
@@ -164,6 +174,53 @@ const StockView = () => {
       addToast(error.response?.data?.message || 'Failed to update threshold', 'error');
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  const handleOpenAdjustModal = (stock) => {
+    setSelectedStockForAdjust(stock);
+    setAdjustQuantity(stock.currentQuantity || 0);
+    setAdjustReason('Store staff correction');
+  };
+
+  const handleSaveAdjust = async (e) => {
+    e.preventDefault();
+    if (!selectedStockForAdjust) return;
+    const prod = selectedStockForAdjust.productId || selectedStockForAdjust.product;
+    const prodId = prod?._id || prod?.id || prod;
+    try {
+      setSavingAdjust(true);
+      await adjustProductStockApi(prodId, {
+        newQuantity: Number(adjustQuantity),
+        reason: adjustReason.trim() || 'Admin correction'
+      });
+      addToast(`Stock for ${prod?.name || 'Product'} adjusted to ${adjustQuantity}!`, 'success');
+      setSelectedStockForAdjust(null);
+      fetchStockLevels();
+      window.dispatchEvent(new Event('stock-updated'));
+    } catch (err) {
+      console.error(err);
+      addToast(err.response?.data?.message || 'Failed to adjust stock', 'error');
+    } finally {
+      setSavingAdjust(false);
+    }
+  };
+
+  const handleResetAllStockToZero = async () => {
+    if (!window.confirm('WARNING: Kya aap sach me sabhi products ka stock ZERO (0) karna chahte hain?')) {
+      return;
+    }
+    try {
+      setResettingAllStock(true);
+      const res = await resetAllStockToZeroApi();
+      addToast(res.data?.message || 'Sabhi products ka stock zero kar diya gaya!', 'success');
+      fetchStockLevels();
+      window.dispatchEvent(new Event('stock-updated'));
+    } catch (err) {
+      console.error(err);
+      addToast(err.response?.data?.message || 'Failed to reset stock', 'error');
+    } finally {
+      setResettingAllStock(false);
     }
   };
 
@@ -321,16 +378,28 @@ const StockView = () => {
           {/* Manual Stock Entry Modal Button */}
           <button
             onClick={handleOpenStockEntry}
-            className="px-4 py-2.5 bg-[#0B4F9C] hover:bg-[#083D7A] text-white rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+            className="px-4 py-2.5 bg-[#0B4F9C] hover:bg-[#083D7A] text-white rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer"
             title="Add incoming stock directly"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>+ Add Stock</span>
           </button>
 
+          {isAdmin && (
+            <button
+              onClick={handleResetAllStockToZero}
+              disabled={resettingAllStock}
+              className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Reset all product quantities to zero"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>{resettingAllStock ? 'Resetting...' : 'Set All Stock to 0'}</span>
+            </button>
+          )}
+
           <button
             onClick={fetchStockLevels}
-            className="p-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-colors shadow-2xs"
+            className="p-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-colors shadow-2xs cursor-pointer"
             title="Refresh stocks"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#0B4F9C]' : ''}`} />
@@ -649,13 +718,24 @@ const StockView = () => {
 
                           {/* Reorder Threshold Editor */}
                           {isAdmin && (
-                            <button
-                              onClick={() => handleOpenThresholdModal(stock)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                              title="Set alert reorder threshold"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleOpenAdjustModal(stock)}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                                title="Admin: Correct/Adjust Stock Count if staff made mistake"
+                              >
+                                <SlidersHorizontal className="w-3 h-3 text-amber-700" />
+                                <span>Correct Count</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenThresholdModal(stock)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="Set alert reorder threshold"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1037,6 +1117,91 @@ const StockView = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Admin Direct Stock Adjustment Modal */}
+      <Modal
+        isOpen={Boolean(selectedStockForAdjust)}
+        onClose={() => setSelectedStockForAdjust(null)}
+        title="Admin Stock Correction / गलती सुधारें"
+        size="md"
+      >
+        {selectedStockForAdjust && (
+          <form onSubmit={handleSaveAdjust} className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 font-medium">
+              Store staff ya galat billing/purchase entry ki wajah se agar stock galat ho gaya hai, to Admin yahan se exact stock seedha sahi (correct) kar sakta hai.
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Product
+              </label>
+              <div className="font-bold text-slate-900 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                {selectedStockForAdjust.productId?.name || selectedStockForAdjust.product?.name}
+                <span className="text-xs text-slate-500 font-normal ml-2">
+                  (Current on-hand: <strong className="text-slate-800">{selectedStockForAdjust.currentQuantity} {selectedStockForAdjust.productId?.unit || selectedStockForAdjust.product?.unit}</strong>)
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1">
+                Correct / New On-Hand Quantity ({selectedStockForAdjust.productId?.unit || selectedStockForAdjust.product?.unit || 'Units'}) *
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                required
+                value={adjustQuantity}
+                onChange={(e) => setAdjustQuantity(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+                placeholder="Naya sahi stock daliye"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1">
+                Reason for Correction (कारण) *
+              </label>
+              <input
+                type="text"
+                required
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="e.g. Store staff ne galat entry kar di thi / Physical count verification"
+                className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedStockForAdjust(null)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingAdjust}
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {savingAdjust ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Updating Stock...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Save Corrected Stock</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

@@ -496,3 +496,179 @@ export const deleteSale = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// @route   PUT /api/sales/:id
+// @desc    Edit/Correct sale order + re-adjust stock (Admin only: fix wrong staff entry)
+// @access  Private/Admin
+export const updateSale = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const sale = await Sale.findByPk(req.params.id, {
+      include: [
+        { model: SaleItem, as: 'items' },
+        { model: Product, as: 'product' }
+      ],
+      transaction
+    });
+
+    if (!sale) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Sale record not found' });
+    }
+
+    const {
+      customerName,
+      outletOrRoute,
+      paymentMode,
+      discount,
+      date,
+      notes,
+      correctionReason,
+      items
+    } = req.body;
+
+    // 1. If items are being modified, reconcile stock
+    if (Array.isArray(items) && items.length > 0) {
+      // Step A: Revert old stock deductions
+      if (Array.isArray(sale.items) && sale.items.length > 0) {
+        for (const oldIt of sale.items) {
+          await addStock(oldIt.productId, oldIt.quantity, { transaction });
+        }
+      } else if (sale.productId && sale.quantity) {
+        await addStock(sale.productId, sale.quantity, { transaction });
+      }
+
+      // Step B: Validate new items and check stock
+      let newSubtotal = 0;
+      const preparedNewItems = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const numQty = Number(item.quantity);
+        const numPrice = Number(item.sellingPrice);
+
+        if (!item.productId || isNaN(numQty) || numQty <= 0) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Valid product and positive quantity required for item #${i + 1}`
+          });
+        }
+
+        const product = await Product.findByPk(item.productId, { transaction });
+        if (!product) {
+          await transaction.rollback();
+          return res.status(404).json({
+            success: false,
+            message: `Product ID ${item.productId} not found`
+          });
+        }
+
+        const stock = await Stock.findOne({ where: { productId: item.productId }, transaction });
+        const available = Number(stock ? stock.currentQuantity : 0);
+        if (available < numQty) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for "${product.name}". Available after adjustment: ${available}, Requested: ${numQty}`
+          });
+        }
+
+        const lineSub = Number((numQty * numPrice).toFixed(2));
+        newSubtotal += lineSub;
+
+        preparedNewItems.push({
+          productId: item.productId,
+          quantity: numQty,
+          sellingPrice: numPrice,
+          costPriceSnapshot: Number(product.costPrice || 0),
+          subtotal: lineSub
+        });
+      }
+
+      // Step C: Deduct new stock and update SaleItems
+      await SaleItem.destroy({ where: { saleId: sale.id }, transaction });
+
+      for (const pIt of preparedNewItems) {
+        await SaleItem.create(
+          {
+            saleId: sale.id,
+            productId: pIt.productId,
+            quantity: pIt.quantity,
+            sellingPrice: pIt.sellingPrice,
+            costPriceSnapshot: pIt.costPriceSnapshot,
+            subtotal: pIt.subtotal
+          },
+          { transaction }
+        );
+        await subtractStock(pIt.productId, pIt.quantity, { transaction });
+      }
+
+      const disc = discount !== undefined ? Math.max(0, Number(discount)) : Number(sale.discount || 0);
+      sale.subtotal = Number(newSubtotal.toFixed(2));
+      sale.discount = Number(disc.toFixed(2));
+      sale.totalAmount = Math.max(0, Number((newSubtotal - disc).toFixed(2)));
+
+      if (preparedNewItems.length === 1) {
+        sale.productId = preparedNewItems[0].productId;
+        sale.quantity = preparedNewItems[0].quantity;
+        sale.sellingPrice = preparedNewItems[0].sellingPrice;
+        sale.costPriceSnapshot = preparedNewItems[0].costPriceSnapshot;
+      } else {
+        sale.productId = null;
+        sale.quantity = null;
+        sale.sellingPrice = null;
+        sale.costPriceSnapshot = null;
+      }
+    } else if (discount !== undefined) {
+      const disc = Math.max(0, Number(discount));
+      sale.discount = Number(disc.toFixed(2));
+      sale.totalAmount = Math.max(0, Number((Number(sale.subtotal || 0) - disc).toFixed(2)));
+    }
+
+    if (customerName !== undefined) sale.customerName = customerName.trim() || 'Walk-in Customer';
+    if (outletOrRoute !== undefined) sale.outletOrRoute = outletOrRoute;
+    if (paymentMode !== undefined) sale.paymentMode = paymentMode;
+    if (date !== undefined && date) sale.date = new Date(date);
+    if (notes !== undefined) {
+      sale.notes = correctionReason 
+        ? `${notes} (Admin Correction: ${correctionReason})`.trim()
+        : notes;
+    }
+
+    await sale.save({ transaction });
+    await transaction.commit();
+
+    await logAudit({
+      req,
+      action: 'UPDATE',
+      entityType: 'Sale',
+      entityId: sale.id,
+      details: `Admin corrected Sale #${sale.receiptNumber}. New Total: ₹${sale.totalAmount}. Reason: ${correctionReason || 'Staff entry error corrected'}`
+    });
+
+    const updatedSale = await Sale.findByPk(sale.id, {
+      include: [
+        {
+          model: SaleItem,
+          as: 'items',
+          include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'category', 'unit', 'costPrice', 'unitPrice'] }]
+        },
+        { model: Product, as: 'product' },
+        { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
+      ]
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Sale #${sale.receiptNumber} successfully corrected by Admin. Inventory synced!`,
+      sale: updatedSale
+    });
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+    console.error('updateSale error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update sale' });
+  }
+};

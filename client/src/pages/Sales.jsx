@@ -4,6 +4,7 @@ import {
   getSalesApi, 
   getSaleByIdApi,
   createSaleApi, 
+  updateSaleApi,
   deleteSaleApi, 
   getProductsApi,
   getProductByCodeApi
@@ -31,7 +32,8 @@ import {
   ChevronDown,
   ChevronUp,
   AlertTriangle,
-  Layers
+  Layers,
+  Edit3
 } from 'lucide-react';
 
 const Sales = () => {
@@ -72,6 +74,110 @@ const Sales = () => {
       { productId: '', quantity: 1, sellingPrice: 0 }
     ]
   });
+
+  // Admin Edit Sale Modal State (Staff Entry Correction)
+  const [editingSale, setEditingSale] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    customerName: '',
+    outletOrRoute: '',
+    paymentMode: 'Cash',
+    discount: 0,
+    date: '',
+    notes: '',
+    correctionReason: '',
+    items: []
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const handleOpenEditModal = (sale) => {
+    const rawItems = Array.isArray(sale.items) && sale.items.length > 0
+      ? sale.items.map(it => ({
+          productId: it.productId || it.product?._id || it.product?.id,
+          quantity: Number(it.quantity || 1),
+          sellingPrice: Number(it.sellingPrice || 0)
+        }))
+      : [
+          {
+            productId: sale.productId || sale.product?._id || sale.product?.id,
+            quantity: Number(sale.quantity || 1),
+            sellingPrice: Number(sale.sellingPrice || 0)
+          }
+        ];
+
+    setEditingSale(sale);
+    setEditFormData({
+      customerName: sale.customerName || 'Walk-in Customer',
+      outletOrRoute: sale.outletOrRoute || 'Counter POS',
+      paymentMode: sale.paymentMode || 'Cash',
+      discount: Number(sale.discount || 0),
+      date: sale.date ? new Date(sale.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      notes: sale.notes || '',
+      correctionReason: '',
+      items: rawItems
+    });
+  };
+
+  const handleEditLineItemChange = (index, field, value) => {
+    setEditFormData(prev => {
+      const updated = [...prev.items];
+      const item = { ...updated[index] };
+      if (field === 'productId') {
+        const prod = products.find(p => String(p._id || p.id) === String(value));
+        item.productId = value;
+        if (prod && !item.sellingPrice) {
+          item.sellingPrice = Number(prod.unitPrice || 0);
+        }
+      } else if (field === 'quantity') {
+        item.quantity = Math.max(0.1, Number(value));
+      } else if (field === 'sellingPrice') {
+        item.sellingPrice = Math.max(0, Number(value));
+      } else {
+        item[field] = value;
+      }
+      updated[index] = item;
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleAddEditLineItem = () => {
+    const defaultP = products.length > 0 ? (products[0]._id || products[0].id) : '';
+    const defaultPrice = products.length > 0 ? Number(products[0].unitPrice || 0) : 0;
+    setEditFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { productId: defaultP, quantity: 1, sellingPrice: defaultPrice }]
+    }));
+  };
+
+  const handleRemoveEditLineItem = (index) => {
+    if (editFormData.items.length <= 1) {
+      addToast('A sale must have at least one line item', 'warning');
+      return;
+    }
+    setEditFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSaveEditSale = async (e) => {
+    e.preventDefault();
+    if (!editingSale) return;
+
+    try {
+      setSavingEdit(true);
+      const res = await updateSaleApi(editingSale._id || editingSale.id, editFormData);
+      if (res.data?.success) {
+        addToast(res.data.message || 'Sale entry corrected and inventory stock reconciled!', 'success');
+        setEditingSale(null);
+        fetchSales();
+        fetchProducts();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to update sale', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     fetchProducts();
@@ -585,6 +691,18 @@ const Sales = () => {
                               <span>Receipt</span>
                             </button>
 
+                            {/* Admin Edit / Correction Button */}
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleOpenEditModal(sale)}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                title="Admin: Correct wrong staff sale entry"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Edit</span>
+                              </button>
+                            )}
+
                             {/* Admin Delete Reversal */}
                             {isAdmin && (
                               <button
@@ -887,6 +1005,171 @@ const Sales = () => {
         onClose={() => setIsReceiptOpen(false)}
         sale={activeReceiptSale}
       />
+
+      {/* 7. Admin Correction: Edit Sale Modal */}
+      <Modal
+        isOpen={Boolean(editingSale)}
+        onClose={() => setEditingSale(null)}
+        title={`Admin Correction: Sale #${editingSale?.receiptNumber || editingSale?._id}`}
+        size="lg"
+      >
+        <form onSubmit={handleSaveEditSale} className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium">
+            <strong className="block font-bold mb-0.5">Admin Staff Correction Mode</strong>
+            Adjust wrong quantities, customer details, discount, or items. Inventory stock levels will be automatically reconciled.
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Customer Name
+              </label>
+              <input
+                type="text"
+                required
+                value={editFormData.customerName}
+                onChange={(e) => setEditFormData({ ...editFormData, customerName: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Payment Mode
+              </label>
+              <select
+                value={editFormData.paymentMode}
+                onChange={(e) => setEditFormData({ ...editFormData, paymentMode: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+              >
+                <option value="Cash">Cash</option>
+                <option value="UPI">UPI / QR Code</option>
+                <option value="Card">Card</option>
+                <option value="Udhaar">Udhaar / Credit Ledger</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span>Sale Items & Quantities</span>
+              <button
+                type="button"
+                onClick={handleAddEditLineItem}
+                className="text-emerald-700 hover:text-emerald-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Item</span>
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {editFormData.items.map((it, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <div className="flex-1">
+                    <select
+                      value={it.productId}
+                      onChange={(e) => handleEditLineItemChange(idx, 'productId', e.target.value)}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
+                    >
+                      {products.map(p => (
+                        <option key={p._id || p.id} value={p._id || p.id}>
+                          {p.name} ({p.unit}) - ₹{p.unitPrice}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-20">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.1"
+                      required
+                      value={it.quantity}
+                      onChange={(e) => handleEditLineItemChange(idx, 'quantity', e.target.value)}
+                      placeholder="Qty"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-right text-slate-900"
+                    />
+                  </div>
+                  <div className="w-20">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      required
+                      value={it.sellingPrice}
+                      onChange={(e) => handleEditLineItemChange(idx, 'sellingPrice', e.target.value)}
+                      placeholder="Price"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-right text-slate-900"
+                    />
+                  </div>
+                  <div className="w-20 text-right font-mono font-bold text-xs text-slate-700">
+                    ₹{(Number(it.quantity || 0) * Number(it.sellingPrice || 0)).toFixed(2)}
+                  </div>
+                  {editFormData.items.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveEditLineItem(idx)}
+                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                Discount (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={editFormData.discount}
+                onChange={(e) => setEditFormData({ ...editFormData, discount: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block mb-1">
+                Reason for Staff Error Correction *
+              </label>
+              <input
+                type="text"
+                required
+                value={editFormData.correctionReason}
+                onChange={(e) => setEditFormData({ ...editFormData, correctionReason: e.target.value })}
+                placeholder="e.g. Staff typed 50 instead of 5 items"
+                className="w-full px-3 py-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-slate-900"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setEditingSale(null)}
+              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingEdit}
+              className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>{savingEdit ? 'Saving Correction...' : 'Save & Reconcile Stock'}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

@@ -65,6 +65,8 @@ export const getStockAlertsApi = (params) => api.get('/stock/alerts', { params }
 export const updateReorderThresholdApi = (productId, data) => api.put(`/stock/${productId}/threshold`, data);
 export const quickStockInwardApi = (data) => api.post('/stock/inward', data);
 export const resetAllStockToZeroApi = () => api.post('/stock/reset-zero');
+export const adjustProductStockApi = (productId, data) => api.put(`/stock/${productId}/adjust`, data);
+export const wipeAllTransactionDataApi = () => api.post('/stock/wipe-data');
 
 // 4.1. Supplier APIs
 export const getSuppliersApi = (params) => api.get('/suppliers', { params });
@@ -77,12 +79,14 @@ export const deleteSupplierApi = (id) => api.delete(`/suppliers/${id}`);
 export const getPurchasesApi = (params) => api.get('/purchases', { params });
 export const getPurchaseByIdApi = (id) => api.get(`/purchases/${id}`);
 export const createPurchaseApi = (data) => api.post('/purchases', data);
+export const updatePurchaseApi = (id, data) => api.put(`/purchases/${id}`, data);
 export const deletePurchaseApi = (id) => api.delete(`/purchases/${id}`);
 
 // 6. Sales APIs (Outward)
 export const getSalesApi = (params) => api.get('/sales', { params });
 export const getSaleByIdApi = (id) => api.get(`/sales/${id}`);
 export const createSaleApi = (data) => api.post('/sales', data);
+export const updateSaleApi = (id, data) => api.put(`/sales/${id}`, data);
 export const deleteSaleApi = (id) => api.delete(`/sales/${id}`);
 
 // 7. Production APIs

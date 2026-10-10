@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { 
   getPurchasesApi, 
   createPurchaseApi, 
+  updatePurchaseApi,
   deletePurchaseApi, 
   getProductsApi,
   getSuppliersApi,
@@ -29,7 +30,8 @@ import {
   ChevronUp,
   X,
   Truck,
-  TrendingDown
+  TrendingDown,
+  Edit3
 } from 'lucide-react';
 
 export default function Purchases() {
@@ -77,6 +79,108 @@ export default function Purchases() {
       }
     ]
   });
+
+  // Admin Edit Purchase Modal State (Staff Entry Correction)
+  const [editingPurchase, setEditingPurchase] = useState(null);
+  const [editPurchaseForm, setEditPurchaseForm] = useState({
+    supplierName: '',
+    supplierId: '',
+    invoiceNumber: '',
+    date: '',
+    notes: '',
+    correctionReason: '',
+    items: []
+  });
+  const [savingPurchaseEdit, setSavingPurchaseEdit] = useState(false);
+
+  const handleOpenEditPurchaseModal = (purchase) => {
+    const rawItems = Array.isArray(purchase.items) && purchase.items.length > 0
+      ? purchase.items.map(it => ({
+          productId: it.productId || it.product?._id || it.product?.id,
+          quantity: Number(it.quantity || 1),
+          costPrice: Number(it.costPrice || 0)
+        }))
+      : [
+          {
+            productId: purchase.productId || purchase.product?._id || purchase.product?.id,
+            quantity: Number(purchase.quantity || 1),
+            costPrice: Number(purchase.costPrice || 0)
+          }
+        ];
+
+    setEditingPurchase(purchase);
+    setEditPurchaseForm({
+      supplierName: purchase.supplierName || 'Mother Dairy Cooperative',
+      supplierId: purchase.supplierId || '',
+      invoiceNumber: purchase.invoiceNumber || '',
+      date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      notes: purchase.notes || '',
+      correctionReason: '',
+      items: rawItems
+    });
+  };
+
+  const handleEditPurchaseItemChange = (index, field, value) => {
+    setEditPurchaseForm(prev => {
+      const updated = [...prev.items];
+      const item = { ...updated[index] };
+      if (field === 'productId') {
+        const prod = products.find(p => String(p.id || p._id) === String(value));
+        item.productId = value;
+        if (prod && !item.costPrice) {
+          item.costPrice = Number(prod.costPrice || 0);
+        }
+      } else if (field === 'quantity') {
+        item.quantity = Math.max(0.1, Number(value));
+      } else if (field === 'costPrice') {
+        item.costPrice = Math.max(0, Number(value));
+      } else {
+        item[field] = value;
+      }
+      updated[index] = item;
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleAddEditPurchaseItem = () => {
+    const defaultP = products.length > 0 ? (products[0].id || products[0]._id) : '';
+    const defaultCost = products.length > 0 ? Number(products[0].costPrice || 0) : 0;
+    setEditPurchaseForm(prev => ({
+      ...prev,
+      items: [...prev.items, { productId: defaultP, quantity: 1, costPrice: defaultCost }]
+    }));
+  };
+
+  const handleRemoveEditPurchaseItem = (index) => {
+    if (editPurchaseForm.items.length <= 1) {
+      addToast('A purchase must have at least one line item', 'warning');
+      return;
+    }
+    setEditPurchaseForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSaveEditPurchase = async (e) => {
+    e.preventDefault();
+    if (!editingPurchase) return;
+
+    try {
+      setSavingPurchaseEdit(true);
+      const res = await updatePurchaseApi(editingPurchase.id || editingPurchase._id, editPurchaseForm);
+      if (res.data?.success) {
+        addToast(res.data.message || 'Purchase order corrected and stock reconciled!', 'success');
+        setEditingPurchase(null);
+        fetchPurchases();
+        fetchProducts();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to update purchase', 'error');
+    } finally {
+      setSavingPurchaseEdit(false);
+    }
+  };
 
   useEffect(() => {
     fetchProducts();
@@ -527,13 +631,23 @@ export default function Purchases() {
 
                         {isAdmin && (
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => handleDelete(purchase.id, purchase.invoiceNumber)}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-                              title="Delete purchase & reverse stock increments"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleOpenEditPurchaseModal(purchase)}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                title="Admin: Correct wrong staff purchase entry"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                onClick={() => handleDelete(purchase.id, purchase.invoiceNumber)}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                                title="Delete purchase & reverse stock increments"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -817,6 +931,167 @@ export default function Purchases() {
               className="flex-1 py-2.5 bg-[#0B4F9C] hover:bg-[#083D7A] disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md transition-colors"
             >
               {submitting ? 'Recording Bulk Order...' : 'Confirm Bulk Order & Update Stock'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Admin Correction: Edit Purchase Modal */}
+      <Modal
+        isOpen={Boolean(editingPurchase)}
+        onClose={() => setEditingPurchase(null)}
+        title={`Admin Correction: Purchase #${editingPurchase?.id || editingPurchase?._id}`}
+        size="lg"
+      >
+        <form onSubmit={handleSaveEditPurchase} className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium">
+            <strong className="block font-bold mb-0.5">Admin Inward Correction Mode</strong>
+            Adjust wrong invoice numbers, supplier names, quantities, or cost prices. Live stock levels will be automatically reconciled.
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Supplier Name
+              </label>
+              <input
+                type="text"
+                required
+                value={editPurchaseForm.supplierName}
+                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, supplierName: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Invoice / Challan Number
+              </label>
+              <input
+                type="text"
+                required
+                value={editPurchaseForm.invoiceNumber}
+                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, invoiceNumber: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B4F9C]"
+              />
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span>Purchase Items & Quantities</span>
+              <button
+                type="button"
+                onClick={handleAddEditPurchaseItem}
+                className="text-blue-700 hover:text-blue-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Item</span>
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {editPurchaseForm.items.map((it, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <div className="flex-1">
+                    <select
+                      value={it.productId}
+                      onChange={(e) => handleEditPurchaseItemChange(idx, 'productId', e.target.value)}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
+                    >
+                      {products.map(p => (
+                        <option key={p.id || p._id} value={p.id || p._id}>
+                          {p.name} ({p.unit})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.1"
+                      required
+                      value={it.quantity}
+                      onChange={(e) => handleEditPurchaseItemChange(idx, 'quantity', e.target.value)}
+                      placeholder="Quantity"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-right text-slate-900"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      required
+                      value={it.costPrice}
+                      onChange={(e) => handleEditPurchaseItemChange(idx, 'costPrice', e.target.value)}
+                      placeholder="Cost (₹)"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-right text-slate-900"
+                    />
+                  </div>
+                  <div className="w-20 text-right font-mono font-bold text-xs text-slate-700">
+                    ₹{(Number(it.quantity || 0) * Number(it.costPrice || 0)).toFixed(2)}
+                  </div>
+                  {editPurchaseForm.items.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveEditPurchaseItem(idx)}
+                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                Purchase Date
+              </label>
+              <input
+                type="date"
+                required
+                value={editPurchaseForm.date}
+                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, date: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block mb-1">
+                Reason for Staff Error Correction *
+              </label>
+              <input
+                type="text"
+                required
+                value={editPurchaseForm.correctionReason}
+                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, correctionReason: e.target.value })}
+                placeholder="e.g. Staff entered 100 crates instead of 10"
+                className="w-full px-3 py-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-slate-900"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setEditingPurchase(null)}
+              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingPurchaseEdit}
+              className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>{savingPurchaseEdit ? 'Saving Correction...' : 'Save & Reconcile Stock'}</span>
             </button>
           </div>
         </form>

@@ -440,3 +440,154 @@ export const deletePurchase = async (req, res) => {
     res.status(500).json({ success: false, message: error.message || 'Failed to delete purchase' });
   }
 };
+
+// @route   PUT /api/purchases/:id
+// @desc    Edit/Correct purchase inward + re-adjust stock (Admin only: fix wrong staff entry)
+// @access  Private/Admin
+export const updatePurchase = async (req, res) => {
+  const t = await sequelize.transaction();
+
+  try {
+    const purchase = await Purchase.findByPk(req.params.id, {
+      include: [
+        { model: PurchaseItem, as: 'items' },
+        { model: Product, as: 'product' }
+      ],
+      transaction: t
+    });
+
+    if (!purchase) {
+      await t.rollback();
+      return res.status(404).json({ success: false, message: 'Purchase record not found' });
+    }
+
+    const {
+      invoiceNumber,
+      supplierName,
+      supplierId,
+      date,
+      notes,
+      correctionReason,
+      items
+    } = req.body;
+
+    // 1. If items modified, adjust stock additions
+    if (Array.isArray(items) && items.length > 0) {
+      // Step A: Revert old purchase stock addition (subtract old)
+      if (Array.isArray(purchase.items) && purchase.items.length > 0) {
+        for (const oldIt of purchase.items) {
+          await subtractStock(oldIt.productId, oldIt.quantity, { transaction: t });
+        }
+      } else if (purchase.productId && purchase.quantity) {
+        await subtractStock(purchase.productId, purchase.quantity, { transaction: t });
+      }
+
+      // Step B: Validate new items and calculate total
+      let newTotal = 0;
+      const preparedItems = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const numQty = Number(item.quantity);
+        const numCost = Number(item.costPrice);
+
+        if (!item.productId || isNaN(numQty) || numQty <= 0) {
+          await t.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Valid product and positive quantity required for line item #${i + 1}`
+          });
+        }
+
+        const product = await Product.findByPk(item.productId, { transaction: t });
+        if (!product) {
+          await t.rollback();
+          return res.status(404).json({ success: false, message: `Product #${item.productId} not found` });
+        }
+
+        const lineSub = Number((numQty * numCost).toFixed(2));
+        newTotal += lineSub;
+
+        preparedItems.push({
+          productId: item.productId,
+          quantity: numQty,
+          costPrice: numCost,
+          subtotal: lineSub
+        });
+      }
+
+      // Step C: Delete old purchase items & insert new ones + add new stock
+      await PurchaseItem.destroy({ where: { purchaseId: purchase.id }, transaction: t });
+
+      for (const pIt of preparedItems) {
+        await PurchaseItem.create(
+          {
+            purchaseId: purchase.id,
+            productId: pIt.productId,
+            quantity: pIt.quantity,
+            costPrice: pIt.costPrice,
+            subtotal: pIt.subtotal
+          },
+          { transaction: t }
+        );
+        await addStock(pIt.productId, pIt.quantity, { transaction: t });
+      }
+
+      purchase.totalAmount = Number(newTotal.toFixed(2));
+      if (preparedItems.length === 1) {
+        purchase.productId = preparedItems[0].productId;
+        purchase.quantity = preparedItems[0].quantity;
+        purchase.costPrice = preparedItems[0].costPrice;
+      } else {
+        purchase.productId = null;
+        purchase.quantity = null;
+        purchase.costPrice = null;
+      }
+    }
+
+    if (invoiceNumber !== undefined && invoiceNumber.trim()) purchase.invoiceNumber = invoiceNumber.trim();
+    if (supplierName !== undefined && supplierName.trim()) purchase.supplierName = supplierName.trim();
+    if (supplierId !== undefined) purchase.supplierId = supplierId || null;
+    if (date !== undefined && date) purchase.date = new Date(date);
+    if (notes !== undefined) {
+      purchase.notes = correctionReason
+        ? `${notes} (Admin Correction: ${correctionReason})`.trim()
+        : notes;
+    }
+
+    await purchase.save({ transaction: t });
+    await t.commit();
+
+    await logAudit({
+      req,
+      action: 'UPDATE',
+      entityType: 'Purchase',
+      entityId: purchase.id,
+      details: `Admin corrected Purchase #${purchase.id} (Invoice: ${purchase.invoiceNumber}). Stock adjusted. Reason: ${correctionReason || 'Staff error correction'}`
+    });
+
+    const updated = await Purchase.findByPk(purchase.id, {
+      include: [
+        {
+          model: PurchaseItem,
+          as: 'items',
+          include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'category', 'unit'] }]
+        },
+        { model: Supplier, as: 'supplier' },
+        { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
+      ]
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Purchase #${purchase.id} successfully corrected by Admin. Stock reconciled!`,
+      purchase: updated
+    });
+  } catch (error) {
+    if (t && !t.finished) {
+      await t.rollback();
+    }
+    console.error('updatePurchase error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update purchase' });
+  }
+};
