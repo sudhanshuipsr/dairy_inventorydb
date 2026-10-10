@@ -506,26 +506,6 @@ const Dashboard = () => {
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#1e3a1e]' : ''}`} />
             <span className="hidden sm:inline">{autoRefresh ? 'Live (60s)' : 'Paused'}</span>
           </button>
-
-          {/* 1. STOCK ADD Quick Button (Dedicated Emerald Button) */}
-          <button
-            onClick={handleOpenStockModal}
-            className="px-3.5 sm:px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 hover:scale-105 active:scale-95 shadow-md shadow-emerald-700/20 cursor-pointer"
-            title="Add Stock to Inventory (Inward)"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-200 stroke-[3]" />
-            <span>STOCK ADD</span>
-          </button>
-
-          {/* 2. SALE Quick Button (Dedicated Dark Green Button) */}
-          <Link
-            to="/sales?new=true"
-            className="px-3.5 sm:px-4 py-2 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white rounded-xl text-xs font-black shadow-md shadow-[#1e3a1e]/20 transition-all flex items-center gap-1.5 hover:scale-105 active:scale-95 cursor-pointer"
-            title="Record Outward Sale & Issue Receipt (Billing)"
-          >
-            <ShoppingCart className="w-3.5 h-3.5 text-emerald-300" />
-            <span>SALE</span>
-          </Link>
         </div>
       </motion.div>
 

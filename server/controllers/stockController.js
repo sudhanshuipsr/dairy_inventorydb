@@ -44,7 +44,7 @@ export const getStockLevels = async (req, res) => {
       totalQuantity: filtered.reduce((sum, s) => sum + Number(s.currentQuantity || 0), 0),
       totalValue: filtered.reduce((sum, s) => sum + (Number(s.currentQuantity || 0) * Number(s.productId?.unitPrice || 0)), 0),
       totalCostValue: filtered.reduce((sum, s) => sum + (Number(s.currentQuantity || 0) * Number(s.productId?.costPrice || 0)), 0),
-      lowStockCount: filtered.filter((s) => Number(s.currentQuantity) <= Number(s.reorderThreshold)).length,
+      lowStockCount: filtered.filter((s) => Number(s.currentQuantity) > 0 && Number(s.currentQuantity) <= Number(s.reorderThreshold)).length,
       outOfStockCount: filtered.filter((s) => Number(s.currentQuantity) === 0).length
     };
 

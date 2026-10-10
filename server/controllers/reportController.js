@@ -117,7 +117,11 @@ export const getDashboardStats = async (req, res) => {
       0
     );
 
-    const lowStockItems = activeStocks.filter((s) => Number(s.currentQuantity || 0) <= Number(s.reorderThreshold || 20));
+    const lowStockItems = activeStocks.filter((s) => {
+      const qty = Number(s.currentQuantity || 0);
+      const threshold = Number(s.reorderThreshold || 20);
+      return qty > 0 && qty <= threshold;
+    });
 
     // Multi-line sales calculation for today
     let todaySalesTotal = 0;

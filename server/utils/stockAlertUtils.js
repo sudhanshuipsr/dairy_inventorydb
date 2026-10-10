@@ -38,7 +38,7 @@ export const getLowStockProducts = async (options = {}) => {
     const currentQty = p.stock ? Number(p.stock.currentQuantity) : 0;
     const threshold = Number(p.reorderThreshold || 20);
 
-    if (currentQty <= threshold) {
+    if (currentQty > 0 && currentQty <= threshold) {
       lowStockItems.push({
         id: p.id,
         _id: p.id,

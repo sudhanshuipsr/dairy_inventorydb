@@ -104,28 +104,8 @@ const Navbar = ({ onOpenMobileMenu }) => {
         </div>
       </div>
 
-      {/* Right Controls: Stock Add, Sale, Install App & User Pill */}
+      {/* Right Controls: Install App & User Pill */}
       <div className="flex items-center gap-2 sm:gap-2.5">
-        {/* Quick Stock Add Navbar Link */}
-        <Link
-          to="/stock?inward=true"
-          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-black transition-all flex items-center gap-1 shadow-xs hover:scale-105 active:scale-95"
-          title="Fast Stock Inward"
-        >
-          <Plus className="w-3.5 h-3.5 text-emerald-100 stroke-[3]" />
-          <span>+ Stock Add</span>
-        </Link>
-
-        {/* Quick Sale Navbar Link */}
-        <Link
-          to="/sales?new=true"
-          className="px-3 py-1.5 bg-[#1e3a1e] hover:bg-[#2d4a2d] text-white rounded-full text-xs font-black transition-all flex items-center gap-1 shadow-xs hover:scale-105 active:scale-95"
-          title="New Sale Billing Counter"
-        >
-          <ShoppingCart className="w-3.5 h-3.5 text-emerald-300" />
-          <span>Sale</span>
-        </Link>
-
         {/* PWA Install Button */}
         {!isInstalled && (
           <button
